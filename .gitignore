@@ -362,3 +362,7 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /CtYun/Properties/launchSettings.json
+
+# 本地运行数据(不提交真实账号)
+ctyun-data/
+!ctyun-data/accounts.json.example

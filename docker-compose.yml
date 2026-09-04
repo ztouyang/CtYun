@@ -1,0 +1,16 @@
+services:
+  ctyun:
+    build:
+      context: .
+      dockerfile: CtYun/Dockerfile
+    image: ctyun:local
+    container_name: ctyun
+    restart: unless-stopped
+    # 首次绑定设备需要输入短信验证码，先用交互模式跑一次：
+    #   docker compose run --rm ctyun
+    # 绑定完成后再用后台模式：
+    #   docker compose up -d
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./ctyun-data:/app/data

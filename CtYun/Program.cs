@@ -79,8 +79,11 @@ async Task RunAccountAsync(AccountConfig account, RuntimeConfig runtimeConfig, C
         return;
     }
 
-    Utility.WriteLine(ConsoleColor.Yellow, $"[{label}] 保活任务启动：每 {runtimeConfig.KeepAliveSeconds} 秒强制重连一次。");
-    var keepAliveTasks = activeDesktops.Select(d => KeepAliveWorkerWithForcedReset(api, account, d, runtimeConfig.KeepAliveSeconds, ct));
+    var keepAliveHint = runtimeConfig.KeepAliveMinSeconds == runtimeConfig.KeepAliveMaxSeconds
+        ? $"每 {runtimeConfig.KeepAliveMinSeconds} 秒"
+        : $"每 {runtimeConfig.KeepAliveMinSeconds}~{runtimeConfig.KeepAliveMaxSeconds} 秒随机";
+    Utility.WriteLine(ConsoleColor.Yellow, $"[{label}] 保活任务启动：{keepAliveHint}强制重连一次。");
+    var keepAliveTasks = activeDesktops.Select(d => KeepAliveWorkerWithForcedReset(api, account, d, runtimeConfig.KeepAliveMinSeconds, runtimeConfig.KeepAliveMaxSeconds, ct));
     await Task.WhenAll(keepAliveTasks);
 }
 
@@ -126,7 +129,7 @@ string ReadVerificationCode(AccountConfig account)
     return Console.ReadLine();
 }
 
-async Task KeepAliveWorkerWithForcedReset(CtYunApi api, AccountConfig account, Desktop desktop, int keepAliveSeconds, CancellationToken globalToken)
+async Task KeepAliveWorkerWithForcedReset(CtYunApi api, AccountConfig account, Desktop desktop, int minSeconds, int maxSeconds, CancellationToken globalToken)
 {
     var label = AccountLabel(account);
     var initialPayload = Convert.FromBase64String("UkVEUQIAAAACAAAAGgAAAAAAAAABAAEAAAABAAAAEgAAAAkAAAAECAAA");
@@ -134,6 +137,11 @@ async Task KeepAliveWorkerWithForcedReset(CtYunApi api, AccountConfig account, D
 
     while (!globalToken.IsCancellationRequested)
     {
+        // 每个周期随机一个保活时长；Next 上界为开区间，+1 让 maxSeconds 可被取到
+        var keepAliveSeconds = minSeconds >= maxSeconds
+            ? minSeconds
+            : Random.Shared.Next(minSeconds, maxSeconds + 1);
+
         using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(globalToken);
         sessionCts.CancelAfter(TimeSpan.FromSeconds(keepAliveSeconds));
 
@@ -256,7 +264,13 @@ RuntimeConfig LoadRuntimeConfig()
         account.DeviceCode = ResolveDeviceCode(account, dataDir);
     }
 
-    return new RuntimeConfig(config.Accounts, Math.Max(10, config.KeepAliveSeconds), dataDir);
+    // 未配置随机区间(值 <= 0)时退回固定值 keepAliveSeconds
+    var minSeconds = config.KeepAliveMinSeconds > 0 ? config.KeepAliveMinSeconds : config.KeepAliveSeconds;
+    var maxSeconds = config.KeepAliveMaxSeconds > 0 ? config.KeepAliveMaxSeconds : config.KeepAliveSeconds;
+    minSeconds = Math.Max(10, minSeconds);   // 不低于 10 秒
+    maxSeconds = Math.Max(minSeconds, maxSeconds); // 保证 max >= min
+
+    return new RuntimeConfig(config.Accounts, minSeconds, maxSeconds, dataDir);
 }
 
 AppConfig LoadAccountsFromEnvironment()
@@ -428,5 +442,6 @@ static bool IsRunningInContainer() => File.Exists("/.dockerenv");
 
 record RuntimeConfig(
     List<AccountConfig> Accounts,
-    int KeepAliveSeconds,
+    int KeepAliveMinSeconds,
+    int KeepAliveMaxSeconds,
     string DataDir);
