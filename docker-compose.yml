@@ -6,6 +6,8 @@ services:
     image: ctyun:local
     container_name: ctyun
     restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
     # 首次绑定设备需要输入短信验证码，先用交互模式跑一次：
     #   docker compose run --rm ctyun
     # 绑定完成后再用后台模式：
